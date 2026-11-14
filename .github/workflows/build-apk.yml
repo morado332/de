@@ -7,15 +7,18 @@ on:
 jobs:
   runtime:
     name: Runtime ${{ matrix.abi }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - abi: arm64-v8a
             platform: linux/arm64
+            runner: ubuntu-24.04-arm      # native ARM64, no emulation
           - abi: armeabi-v7a
             platform: linux/arm/v7
+            runner: ubuntu-latest         # 32-bit ARM through QEMU
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +30,7 @@ jobs:
           key: rt-v1-${{ matrix.abi }}-${{ hashFiles('runtime/**', 'android/app/src/main/assets/router.php') }}
 
       - uses: docker/setup-qemu-action@v3
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.abi != 'arm64-v8a'
 
       - name: Build runtime (Alpine PHP 8.3 + MariaDB)
         if: steps.cache.outputs.cache-hit != 'true'
@@ -47,6 +50,7 @@ jobs:
     name: APK ${{ matrix.abi }}
     needs: runtime
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
