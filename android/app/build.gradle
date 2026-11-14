@@ -1,0 +1,76 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Which CPU runtime to bundle: arm64-v8a (most tablets) or armeabi-v7a (older 32-bit tablets)
+def rtAbi = (project.findProperty('rtAbi') ?: 'arm64-v8a').toString()
+def vc = (project.findProperty('vc') ?: '1').toString().toInteger()
+def rtDir = "${rootDir}/../build-rt/${rtAbi}"
+
+android {
+    namespace 'com.morado.phppreview'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.morado.phppreview'
+        minSdk 26
+        targetSdk 34
+        versionCode vc
+        versionName "1.0.${vc}"
+        ndk { abiFilters rtAbi }
+    }
+
+    // A fixed key so new versions install as updates (client data is kept)
+    signingConfigs {
+        shared {
+            storeFile file('preview.keystore')
+            storePassword 'phppreview'
+            keyAlias 'preview'
+            keyPassword 'phppreview'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+        debug {
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ["${rtDir}/jniLibs"]
+            assets.srcDirs = ['src/main/assets', "${rtDir}/assets"]
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging true   // extract libldmusl.so so it can be executed
+            keepDebugSymbols.add('**/*.so')
+        }
+    }
+
+    androidResources {
+        noCompress 'zip'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "PHP-Preview-${rtAbi}-${variant.versionName}.apk"
+        }
+    }
+}

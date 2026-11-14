@@ -1,0 +1,9 @@
+out/
+build-rt/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/adminer.php
+*.iml
+.idea/

@@ -1,0 +1,87 @@
+name: Build PHP Preview APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    name: Runtime ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            platform: linux/arm64
+          - abi: armeabi-v7a
+            platform: linux/arm/v7
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache runtime
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: out/dist
+          key: rt-v1-${{ matrix.abi }}-${{ hashFiles('runtime/**', 'android/app/src/main/assets/router.php') }}
+
+      - uses: docker/setup-qemu-action@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+
+      - name: Build runtime (Alpine PHP 8.3 + MariaDB)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: docker run --rm --platform ${{ matrix.platform }} -v "$PWD:/w" -w /w alpine:3.20 sh runtime/build-runtime.sh /w/out ${{ matrix.abi }}
+
+      - name: Test runtime the way Android runs it
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: docker run --rm --platform ${{ matrix.platform }} -v "$PWD:/w" -w /w debian:bookworm-slim bash runtime/test-runtime.sh /w/out /w/android/app/src/main/assets/router.php
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.abi }}
+          path: out/dist
+          retention-days: 3
+
+  apk:
+    name: APK ${{ matrix.abi }}
+    needs: runtime
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-${{ matrix.abi }}
+          path: build-rt/${{ matrix.abi }}
+
+      - name: Download Adminer (database manager)
+        run: |
+          for u in \
+            https://github.com/vrana/adminer/releases/download/v5.4.1/adminer-5.4.1-mysql.php \
+            https://github.com/vrana/adminer/releases/download/v5.3.0/adminer-5.3.0-mysql.php \
+            https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1-mysql.php; do
+            if curl -fsSL -o android/app/src/main/assets/adminer.php "$u"; then echo "Adminer: $u"; break; fi
+          done
+          test -s android/app/src/main/assets/adminer.php
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        run: gradle -p android assembleRelease -PrtAbi=${{ matrix.abi }} -Pvc=${{ github.run_number }} --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PHP-Preview-${{ matrix.abi }}
+          path: android/app/build/outputs/apk/release/*.apk
